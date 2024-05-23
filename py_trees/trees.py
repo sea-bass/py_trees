@@ -430,6 +430,7 @@ class BehaviourTree(object):
         self: BehaviourTree,
         period_ms: int,
         number_of_iterations: int = CONTINUOUS_TICK_TOCK,
+        stop_on_terminal_state: bool = False,
         pre_tick_handler: typing.Optional[
             typing.Callable[[BehaviourTree], None]
         ] = None,
@@ -440,10 +441,8 @@ class BehaviourTree(object):
         """
         Tick continuously with period as specified.
 
-        Depending on the implementation, the
-        period may be more or less accurate and may drift in some cases (the default
-        implementation here merely assumes zero time in tick and sleeps for this duration
-        of time and consequently, will drift).
+        Depending on the implementation, the period may be more or less accurately tracked.
+        For example, if your tick time is greater than the specified period, the timing will overrun.
 
         This optionally accepts some handlers that will
         be used for the duration of this tick tock (c.f. those added by
@@ -456,20 +455,27 @@ class BehaviourTree(object):
         Args:
             period_ms (:obj:`float`): sleep this much between ticks (milliseconds)
             number_of_iterations (:obj:`int`): number of iterations to tick-tock
+            stop_on_terminal_state (:obj: `bool`): if true, stops when the tree's status is :data:`~py_trees.common.Status.SUCCESS` or `:data:`~py_trees.common.Status.FAILURE`.
             pre_tick_handler (:obj:`func`): function to execute before ticking
             post_tick_handler (:obj:`func`): function to execute after ticking
         """
         tick_tocks = 0
+        period_s = period_ms / 1000.0
         while not self.interrupt_tick_tocking and (
             tick_tocks < number_of_iterations
             or number_of_iterations == CONTINUOUS_TICK_TOCK
         ):
+            start_time = time.time()
             self.tick(pre_tick_handler, post_tick_handler)
             try:
-                time.sleep(period_ms / 1000.0)
+                time.sleep(max(0.0, period_s + start_time - time.time()))
             except KeyboardInterrupt:
                 break
             tick_tocks += 1
+
+            if stop_on_terminal_state and self.root.status != common.Status.RUNNING:
+                break
+
         self.interrupt_tick_tocking = False
 
     def tip(self) -> typing.Optional[behaviour.Behaviour]:
